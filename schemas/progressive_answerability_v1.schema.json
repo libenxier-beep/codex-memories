@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/progressive_answerability_v1.schema.json",
+  "title": "Progressive Answerability Decision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_objective_status",
+    "request_objective",
+    "p_answerable",
+    "decision_confidence",
+    "facet_assessments",
+    "missing_facets",
+    "reason_code"
+  ],
+  "properties": {
+    "request_objective_status": {
+      "type": "string",
+      "enum": ["concrete", "underspecified"]
+    },
+    "request_objective": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "p_answerable": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "decision_confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "facet_assessments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["facet", "assessment", "evidence_refs"],
+        "properties": {
+          "facet": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "assessment": {
+            "type": "string",
+            "enum": ["supported", "unsupported", "contradicted"]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 16,
+              "pattern": "^[NEP][1-9][0-9]*$"
+            }
+          }
+        }
+      }
+    },
+    "missing_facets": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      }
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": [
+        "complete_support",
+        "required_facet_unsupported",
+        "contradictory_evidence",
+        "ambiguous_evidence",
+        "instruction_only"
+      ]
+    }
+  }
+}

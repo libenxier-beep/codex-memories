@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/error_atom.schema.json",
+  "title": "Standalone Durable Error Atom",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "error_id",
+    "summary",
+    "symptom",
+    "root_cause",
+    "prevention_guard",
+    "verification",
+    "source_incidents",
+    "scope",
+    "applies_to",
+    "status",
+    "first_seen",
+    "last_seen",
+    "recurrence_count",
+    "review_condition",
+    "supersedes"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "error_id": {"type": "string", "pattern": "^[a-z0-9]+([._-][a-z0-9]+)+$"},
+    "summary": {"type": "string", "minLength": 1},
+    "symptom": {"type": "string", "minLength": 1},
+    "root_cause": {"type": "string", "minLength": 1},
+    "prevention_guard": {"type": "string", "minLength": 1},
+    "verification": {"type": "string", "minLength": 1},
+    "source_incidents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "sha256"],
+        "properties": {
+          "ref": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "scope": {"enum": ["global", "platform", "repo", "learning"]},
+    "applies_to": {"enum": ["all", "codex", "claude_code", "openclaw"]},
+    "status": {"enum": ["active", "superseded", "retired"]},
+    "first_seen": {"type": "string", "format": "date"},
+    "last_seen": {"type": "string", "format": "date"},
+    "recurrence_count": {"type": "integer", "minimum": 1},
+    "review_condition": {"type": "string", "minLength": 1},
+    "supersedes": {"type": "array", "items": {"type": "string"}}
+  }
+}

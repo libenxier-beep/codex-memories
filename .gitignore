@@ -1,0 +1,40 @@
+# Local/private memory assets are never part of the GitHub projection.
+personal_knowledge/
+agent_self/
+extensions/
+work_contexts/
+core/
+platform/
+learnings/
+rollout_summaries/
+short_term/
+skills/
+MEMORY.md
+memory_summary.md
+raw_memories.md
+memory_index.md
+memory_change_log.md
+agent_evaluation_and_feedback.md
+agent_operations_and_observability.md
+agent_self_iteration.md
+agent_system_design_and_orchestration.md
+git_workflow_discipline.md
+global_collaboration_preferences.md
+skill_engineering_principles.md
+
+# Runtime control-plane state is local evidence, not source.
+control_plane/.writer.lock
+control_plane/candidates/
+control_plane/approvals/
+control_plane/intents/
+control_plane/receipts/
+
+# Derived indexes, caches, backups, and machine metadata.
+memory-sidecar/
+**/graphify-out/
+**/cache/
+**/__pycache__/
+*.py[cod]
+*.bak
+*.bak.*
+.DS_Store
