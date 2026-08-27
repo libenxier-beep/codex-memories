@@ -12,8 +12,9 @@ import argparse
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from retrieval_v2_knowledge_router import ROOT as MEMORIES_ROOT
 from retrieval_v2_knowledge_router import route_knowledge
@@ -34,6 +35,25 @@ GRAPH_BY_COLLECTION = {
     "work": "work-contexts-routing",
     "personal_knowledge": "personal-knowledge-routing",
 }
+
+
+@dataclass(frozen=True)
+class AccessProfile:
+    legacy_durable: bool
+    graph_context_discovery: bool
+    live_semantic_recall: bool
+
+
+V2_ACCESS_PROFILE = AccessProfile(
+    legacy_durable=False,
+    graph_context_discovery=True,
+    live_semantic_recall=True,
+)
+LEGACY_ACCESS_PROFILE = AccessProfile(
+    legacy_durable=True,
+    graph_context_discovery=False,
+    live_semantic_recall=False,
+)
 
 
 def _configured_layers(root: Path, mode: str) -> list[tuple[str, list[Path]]]:
@@ -216,84 +236,94 @@ def _phrase_matches(query: str, phrase: str) -> bool:
     return normalized in query
 
 
+def _graph_result(profile: AccessProfile, **result: Any) -> dict[str, Any]:
+    if profile.graph_context_discovery:
+        result.setdefault("candidates", [])
+    return result
+
+
 def _graph_artifacts(
     graph_dir: Path,
     *,
     graph_id: str,
     source_commit: object,
+    profile: AccessProfile,
 ) -> tuple[dict[str, Any], dict[str, Any]] | dict[str, Any]:
     health_path = graph_dir / "health.json"
     extraction_path = graph_dir / "source_extraction.json"
     if not health_path.is_file() or not extraction_path.is_file():
-        return {
-            "status": "unavailable",
-            "reason": "graph_artifact_missing",
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+        return _graph_result(
+            profile,
+            status="unavailable",
+            reason="graph_artifact_missing",
+            graph_id=graph_id,
+            advisory_only=True,
+            neighbors=[],
+        )
     try:
         health = _read_json(health_path)
         extraction = _read_json(extraction_path)
     except ValueError:
-        return {
-            "status": "unavailable",
-            "reason": "graph_artifact_invalid",
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
-    if health.get("graph_id") != graph_id or extraction.get("graph_id") != graph_id:
-        return {
-            "status": "unavailable",
-            "reason": "graph_identity_mismatch",
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+        return _graph_result(
+            profile,
+            status="unavailable",
+            reason="graph_artifact_invalid",
+            graph_id=graph_id,
+            advisory_only=True,
+            neighbors=[],
+        )
+    if profile.graph_context_discovery and (
+        health.get("graph_id") != graph_id or extraction.get("graph_id") != graph_id
+    ):
+        return _graph_result(
+            profile,
+            status="unavailable",
+            reason="graph_identity_mismatch",
+            graph_id=graph_id,
+            advisory_only=True,
+            neighbors=[],
+        )
     if health.get("source_revision") != source_commit:
-        return {
-            "status": "stale",
-            "reason": "source_revision_mismatch",
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+        return _graph_result(
+            profile,
+            status="stale",
+            reason="source_revision_mismatch",
+            graph_id=graph_id,
+            advisory_only=True,
+            neighbors=[],
+        )
     if health.get("source_dirty") is not False:
-        return {
-            "status": "stale",
-            "reason": "source_worktree_dirty",
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+        return _graph_result(
+            profile,
+            status="stale",
+            reason="source_worktree_dirty",
+            graph_id=graph_id,
+            advisory_only=True,
+            neighbors=[],
+        )
     hard_gates = health.get("hard_gates")
     if not isinstance(hard_gates, dict) or not hard_gates or not all(hard_gates.values()):
-        return {
-            "status": "unavailable",
-            "reason": "graph_hard_gate_failed",
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
-    fingerprint = hashlib.sha256(
-        json.dumps(extraction, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()
-    if health.get("source_fingerprint") != fingerprint:
-        return {
-            "status": "unavailable",
-            "reason": "graph_fingerprint_mismatch",
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+        return _graph_result(
+            profile,
+            status="unavailable",
+            reason="graph_hard_gate_failed",
+            graph_id=graph_id,
+            advisory_only=True,
+            neighbors=[],
+        )
+    if profile.graph_context_discovery:
+        fingerprint = hashlib.sha256(
+            json.dumps(extraction, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        if health.get("source_fingerprint") != fingerprint:
+            return _graph_result(
+                profile,
+                status="unavailable",
+                reason="graph_fingerprint_mismatch",
+                graph_id=graph_id,
+                advisory_only=True,
+                neighbors=[],
+            )
     return health, extraction
 
 
@@ -363,60 +393,69 @@ def _graph_candidates(
     query: str,
     graph_root: Path,
     limit: int,
+    profile: AccessProfile,
 ) -> dict[str, Any]:
     if route.get("trace", {}).get("stage") == "privacy_boundary":
-        return {
-            "status": "skipped",
-            "reason": "privacy_boundary",
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+        return _graph_result(
+            profile,
+            status="skipped",
+            reason="privacy_boundary",
+            advisory_only=True,
+            neighbors=[],
+        )
     collection_id = route.get("collection_id")
     context_id = route.get("context_id")
-    if route.get("decision") == "ambiguous":
-        return {
-            "status": "skipped",
-            "reason": "authoritative_route_ambiguous",
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+    if profile.graph_context_discovery and route.get("decision") == "ambiguous":
+        return _graph_result(
+            profile,
+            status="skipped",
+            reason="authoritative_route_ambiguous",
+            advisory_only=True,
+            neighbors=[],
+        )
     graph_id = GRAPH_BY_COLLECTION.get(collection_id)
-    if graph_id is None and route.get("trace", {}).get("stage") == "collection_selection":
+    if (
+        profile.graph_context_discovery
+        and graph_id is None
+        and route.get("trace", {}).get("stage") == "collection_selection"
+    ):
         graph_id = GRAPH_BY_COLLECTION["work"]
-    if graph_id is None:
-        return {
-            "status": "not_applicable",
-            "reason": "route_has_no_context_graph",
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+    if graph_id is None or (
+        not profile.graph_context_discovery and not isinstance(context_id, str)
+    ):
+        return _graph_result(
+            profile,
+            status="not_applicable",
+            reason="route_has_no_context_graph",
+            advisory_only=True,
+            neighbors=[],
+        )
     graph_dir = graph_root.expanduser().resolve() / graph_id / "graphify-out"
     source_commit = route.get("trace", {}).get("source_commit")
     artifacts = _graph_artifacts(
         graph_dir,
         graph_id=graph_id,
         source_commit=source_commit,
+        profile=profile,
     )
     if isinstance(artifacts, dict):
         return artifacts
     _, extraction = artifacts
-    if not isinstance(context_id, str):
+    if profile.graph_context_discovery and not isinstance(context_id, str):
         candidates = _rank_graph_contexts(query, extraction, limit=limit)
-        return {
-            "status": "candidate" if candidates else "miss",
-            "reason": (
+        return _graph_result(
+            profile,
+            status="candidate" if candidates else "miss",
+            reason=(
                 "bounded_revision_matched_context_discovery"
                 if candidates
                 else "no_bounded_context_candidate"
             ),
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": candidates,
-        }
+            graph_id=graph_id,
+            advisory_only=True,
+            neighbors=[],
+            candidates=candidates,
+        )
     nodes = {
         node.get("id"): node
         for node in extraction.get("nodes", [])
@@ -424,14 +463,14 @@ def _graph_candidates(
     }
     routed_node = f"context_{context_id}"
     if routed_node not in nodes:
-        return {
-            "status": "unavailable",
-            "reason": "routed_node_missing",
-            "graph_id": graph_id,
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
+        return _graph_result(
+            profile,
+            status="unavailable",
+            reason="routed_node_missing",
+            graph_id=graph_id,
+            advisory_only=True,
+            neighbors=[],
+        )
     neighbors: list[dict[str, Any]] = []
     for edge in extraction.get("edges", []):
         if not isinstance(edge, dict) or edge.get("confidence") != "EXTRACTED":
@@ -465,31 +504,194 @@ def _graph_candidates(
             str(item["assertion_id"]),
         )
     )
+    return _graph_result(
+        profile,
+        status="used",
+        reason="revision_matched_explicit_assertions",
+        graph_id=graph_id,
+        routed_node=routed_node,
+        advisory_only=True,
+        neighbors=neighbors[:limit],
+    )
+
+
+def _legacy_durable_access(
+    query: str,
+    *,
+    root: Path,
+    router_root: Path,
+    limit: int,
+    projection_path: Path,
+    hybrid_projection_path: Path,
+    recall_policy: Any,
+    embedding_helper: Path,
+    embedding_cache: Path,
+    route: Callable[..., dict[str, Any]],
+    verify_recall_request: Callable[..., Any],
+) -> dict[str, Any]:
+    try:
+        privacy_route = route(query, root=router_root, read_selector=None)
+        request = verify_recall_request(
+            query,
+            recall_policy,
+            route_result=privacy_route,
+            entry_point="durable_access",
+            session_id="durable-access:"
+            + hashlib.sha256(
+                (
+                    str(root.resolve(strict=False))
+                    + "\0"
+                    + str(router_root.resolve(strict=False))
+                ).encode("utf-8")
+            ).hexdigest(),
+        )
+    except Exception:
+        return {
+            "schema_version": 1,
+            "mode": "durable",
+            "authority": "none",
+            "privacy_stage": "classification_failed",
+            "projection": {
+                "schema_version": 1,
+                "status": "abstain",
+                "reason": "query_classification_failed",
+                "matches": [],
+            },
+        }
+    privacy_stop = privacy_route.get("trace", {}).get("stage") == "privacy_boundary"
+    from agent_memory_system.embedding import LocalNaturalLanguageEmbedding
+    from agent_memory_system.retrieval import GovernedHybridRetrieval
+    from memory_control_plane.projection import MemoryProjection, ProjectionError
+
+    projection = MemoryProjection(
+        repository=root,
+        index_path=projection_path,
+        authority_roots=("core", "platform", "learnings"),
+    )
+    typed_policy = request.policy
+    if privacy_stop:
+        result = projection.recall(
+            query,
+            context=typed_policy,
+            limit=min(limit, 20),
+        )
+        return {
+            "schema_version": 1,
+            "mode": "durable",
+            "authority": "exact_committed_memory_projection",
+            "privacy_stage": privacy_route.get("trace", {}).get("stage"),
+            "projection": result,
+        }
+    hybrid = GovernedHybridRetrieval(
+        authority=projection,
+        index_path=hybrid_projection_path,
+        embedding=LocalNaturalLanguageEmbedding(
+            helper_source=embedding_helper,
+            cache_dir=embedding_cache,
+        ),
+    )
+    try:
+        result = hybrid.recall(
+            query,
+            context=typed_policy,
+            limit=min(limit, 20),
+            request_binding=request.to_mapping(),
+        )
+        authority = "governed_hybrid_committed_projection"
+    except (RuntimeError, ProjectionError):
+        try:
+            result = projection.recall(
+                query,
+                context=typed_policy,
+                limit=min(limit, 20),
+            )
+            authority = "exact_committed_memory_projection"
+        except ProjectionError:
+            result = {
+                "schema_version": 1,
+                "status": "unavailable",
+                "reason": "projection_unavailable",
+                "matches": [],
+            }
+            authority = "exact_committed_memory_projection"
     return {
-        "status": "used",
-        "reason": "revision_matched_explicit_assertions",
-        "graph_id": graph_id,
-        "routed_node": routed_node,
-        "advisory_only": True,
-        "neighbors": neighbors[:limit],
-        "candidates": [],
+        "schema_version": 1,
+        "mode": "durable",
+        "authority": authority,
+        "privacy_stage": privacy_route.get("trace", {}).get("stage"),
+        "projection": result,
     }
 
 
-def access_knowledge(
+def _v2_durable_access(
     query: str,
     *,
-    mode: str = "domain",
-    root: Path = MEMORIES_ROOT,
-    codex_home: Path = CODEX_HOME,
-    graph_root: Path = GRAPH_ROOT,
-    strategy: str = "escalate",
-    limit: int = 10,
-    read_selector: Optional[str] = "first",
-    expand_graph: bool = True,
-    projection_path: Path = MEMORY_PROJECTION,
-    recall_scopes: tuple[str, ...] = ("global", "platform", "learning"),
-    high_stakes: bool = False,
+    root: Path,
+    limit: int,
+    projection_path: Path,
+    recall_scopes: tuple[str, ...],
+    high_stakes: bool,
+    route: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
+    privacy_route = route(query, root=root, read_selector=None)
+    privacy_stop = privacy_route.get("trace", {}).get("stage") == "privacy_boundary"
+    from memory_control_plane.projection import MemoryProjection, ProjectionError
+
+    projection = MemoryProjection(
+        repository=root,
+        index_path=projection_path,
+        authority_roots=("core", "platform", "learnings"),
+    )
+    try:
+        result = projection.recall(
+            query,
+            context={
+                "scopes": list(recall_scopes),
+                "applies_to": "codex",
+                "private_profile": privacy_stop,
+                "high_stakes": high_stakes,
+            },
+            limit=min(limit, 20),
+        )
+    except ProjectionError:
+        result = {
+            "schema_version": 1,
+            "status": "unavailable",
+            "reason": "projection_unavailable",
+            "matches": [],
+        }
+    return {
+        "schema_version": 1,
+        "mode": "durable",
+        "authority": "exact_committed_memory_projection",
+        "privacy_stage": privacy_route.get("trace", {}).get("stage"),
+        "projection": result,
+    }
+
+
+def _access_knowledge(
+    query: str,
+    *,
+    profile: AccessProfile,
+    route: Callable[..., dict[str, Any]],
+    live_recall: Callable[..., dict[str, Any]],
+    mode: str,
+    root: Path,
+    router_root: Path | None,
+    codex_home: Path,
+    graph_root: Path,
+    strategy: str,
+    limit: int,
+    read_selector: Optional[str],
+    expand_graph: bool,
+    projection_path: Path,
+    hybrid_projection_path: Path | None,
+    recall_policy: Any,
+    recall_scopes: tuple[str, ...],
+    high_stakes: bool,
+    embedding_helper: Path | None,
+    embedding_cache: Path | None,
+    verify_recall_request: Callable[..., Any] | None,
 ) -> dict[str, Any]:
     """Read governed knowledge without letting candidate indexes become authority."""
     if not isinstance(query, str) or not query.strip():
@@ -500,41 +702,38 @@ def access_knowledge(
         raise ValueError("unsupported recall strategy")
     if limit < 1 or limit > 50:
         raise ValueError("limit must be between 1 and 50")
+    trusted_router_root = root if router_root is None else router_root
     if mode == "durable":
-        privacy_route = route_knowledge(query, root=root, read_selector=None)
-        privacy_stop = privacy_route.get("trace", {}).get("stage") == "privacy_boundary"
-        from memory_control_plane.projection import MemoryProjection, ProjectionError
-
-        projection = MemoryProjection(
-            repository=root,
-            index_path=projection_path,
-            authority_roots=("core", "platform", "learnings"),
-        )
-        try:
-            result = projection.recall(
+        if profile.legacy_durable:
+            if (
+                hybrid_projection_path is None
+                or embedding_helper is None
+                or embedding_cache is None
+                or verify_recall_request is None
+            ):
+                raise ValueError("legacy durable access dependencies are unavailable")
+            return _legacy_durable_access(
                 query,
-                context={
-                    "scopes": list(recall_scopes),
-                    "applies_to": "codex",
-                    "private_profile": privacy_stop,
-                    "high_stakes": high_stakes,
-                },
-                limit=min(limit, 20),
+                root=root,
+                router_root=trusted_router_root,
+                limit=limit,
+                projection_path=projection_path,
+                hybrid_projection_path=hybrid_projection_path,
+                recall_policy=recall_policy,
+                embedding_helper=embedding_helper,
+                embedding_cache=embedding_cache,
+                route=route,
+                verify_recall_request=verify_recall_request,
             )
-        except ProjectionError:
-            result = {
-                "schema_version": 1,
-                "status": "unavailable",
-                "reason": "projection_unavailable",
-                "matches": [],
-            }
-        return {
-            "schema_version": 1,
-            "mode": "durable",
-            "authority": "exact_committed_memory_projection",
-            "privacy_stage": privacy_route.get("trace", {}).get("stage"),
-            "projection": result,
-        }
+        return _v2_durable_access(
+            query,
+            root=root,
+            limit=limit,
+            projection_path=projection_path,
+            recall_scopes=recall_scopes,
+            high_stakes=high_stakes,
+            route=route,
+        )
     if mode in {"history", "recent", "evidence"}:
         return {
             "schema_version": 1,
@@ -558,33 +757,56 @@ def access_knowledge(
             limit=limit,
         )
 
-    route = route_knowledge(query, root=root, read_selector=read_selector)
-    privacy_stop = route.get("trace", {}).get("stage") == "privacy_boundary"
-    backend = route.get("trace", {}).get("retrieval_backend", "not_run")
-    graph = (
-        _graph_candidates(route, query=query, graph_root=graph_root, limit=limit)
-        if expand_graph
-        else {
-            "status": "skipped",
-            "reason": "disabled_by_caller",
-            "advisory_only": True,
-            "neighbors": [],
-            "candidates": [],
-        }
-    )
-    semantic = governed_live_recall(
+    route_result = route(
         query,
-        route=route,
-        root=root,
-        limit=min(limit, 5),
+        root=trusted_router_root,
+        read_selector=read_selector,
+    )
+    privacy_stop = route_result.get("trace", {}).get("stage") == "privacy_boundary"
+    backend = route_result.get("trace", {}).get("retrieval_backend", "not_run")
+    graph = (
+        _graph_candidates(
+            route_result,
+            query=query,
+            graph_root=graph_root,
+            limit=limit,
+            profile=profile,
+        )
+        if expand_graph
+        else _graph_result(
+            profile,
+            status="skipped",
+            reason="disabled_by_caller",
+            advisory_only=True,
+            neighbors=[],
+        )
+    )
+    semantic = (
+        live_recall(
+            query,
+            route=route_result,
+            root=root,
+            limit=min(limit, 5),
+        )
+        if profile.live_semantic_recall
+        else {
+            "status": "skipped" if privacy_stop else "unavailable",
+            "backend": None,
+            "reason": (
+                "privacy_boundary" if privacy_stop else "no_configured_embedding_index"
+            ),
+            "candidate_only": True,
+        }
     )
     return {
         "schema_version": 1,
         "mode": "domain",
         "authority": (
-            "exact_committed_document" if route.get("document") is not None else "governed_route"
+            "exact_committed_document"
+            if route_result.get("document") is not None
+            else "governed_route"
         ),
-        "route": route,
+        "route": route_result,
         "retrieval": {
             "lexical": {
                 "status": "skipped" if backend == "not_run" else "used",
@@ -595,6 +817,46 @@ def access_knowledge(
             "graph": graph,
         },
     }
+
+
+def access_knowledge(
+    query: str,
+    *,
+    mode: str = "domain",
+    root: Path = MEMORIES_ROOT,
+    codex_home: Path = CODEX_HOME,
+    graph_root: Path = GRAPH_ROOT,
+    strategy: str = "escalate",
+    limit: int = 10,
+    read_selector: Optional[str] = "first",
+    expand_graph: bool = True,
+    projection_path: Path = MEMORY_PROJECTION,
+    recall_scopes: tuple[str, ...] = ("global", "platform", "learning"),
+    high_stakes: bool = False,
+) -> dict[str, Any]:
+    return _access_knowledge(
+        query,
+        profile=V2_ACCESS_PROFILE,
+        route=route_knowledge,
+        live_recall=governed_live_recall,
+        mode=mode,
+        root=root,
+        router_root=None,
+        codex_home=codex_home,
+        graph_root=graph_root,
+        strategy=strategy,
+        limit=limit,
+        read_selector=read_selector,
+        expand_graph=expand_graph,
+        projection_path=projection_path,
+        hybrid_projection_path=None,
+        recall_policy=None,
+        recall_scopes=recall_scopes,
+        high_stakes=high_stakes,
+        embedding_helper=None,
+        embedding_cache=None,
+        verify_recall_request=None,
+    )
 
 
 def main() -> int:
