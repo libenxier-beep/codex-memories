@@ -76,6 +76,7 @@ EXPECTED_BASELINE_DIGESTS = {
     "c0847d8a8b0ed7197448": "88ad0b4e743ba550cac976359a42b67b4fa4e0920ce44e2a8f1d2d39462f8147",
     "e84cc3cbf4a13dbf901f": "f852fb476afec4a501949afa80bc50cfa3c79f16155691733cb3e1595e3be86a",
     "6881f6cd1e48dbb9acc2": "f852fb476afec4a501949afa80bc50cfa3c79f16155691733cb3e1595e3be86a",
+    "86701db0580d3dc7a1df": "4c2e6bc0477009f9d44333f358c2919af726dbe754b79a545c74899e9cc0e95c",
 }
 
 
@@ -113,6 +114,9 @@ try:
         module = importlib.import_module(payload["module"])
         function = getattr(module, payload["function"])
         value = function(payload.get("query"), **decode_paths(payload.get("options", {})))
+    elif payload["call"] == "public_names":
+        module = importlib.import_module(payload["module"])
+        value = sorted(name for name in dir(module) if not name.startswith("_"))
     elif payload["call"] == "resolve_sources":
         module = importlib.import_module(payload["module"])
         root = Path(payload["root"])
@@ -925,6 +929,15 @@ class RouterAccessDifferentialTests(unittest.TestCase):
                         self.assertTrue(result["ok"])
                     else:
                         self.assertFalse(result["ok"])
+
+    def test_legacy_router_public_namespace_matches_baseline(self) -> None:
+        result = self.assert_differential(
+            {
+                "call": "public_names",
+                "module": "knowledge_router",
+            }
+        )
+        self.assertIn("route_knowledge", result["value"])
 
     def test_legacy_access_matches_baseline_for_domain_policy_and_lifecycle(self) -> None:
         domain = self.options(
