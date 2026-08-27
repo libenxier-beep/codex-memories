@@ -2,7 +2,7 @@
 
 **Local-first persistent memory for OpenAI Codex — governed recall, progressive disclosure, and no hosted vector database.**
 
-[![Tests](https://img.shields.io/badge/tests-270%20passing-brightgreen)](https://github.com/libenxier-beep/codex-memories/actions)
+[![Tests](https://img.shields.io/badge/tests-282%20passing-brightgreen)](https://github.com/libenxier-beep/codex-memories/actions)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Local First](https://img.shields.io/badge/storage-local--first-6f42c1)](#privacy-and-trust-boundary)
@@ -125,7 +125,7 @@ and [progressive retrieval guide](docs/progressive-retrieval-v2.md).
 - `scripts/memory_control_plane/` — candidate, authorization, projection, and
   atomic authority control plane
 - `schemas/` — machine-readable contracts
-- `tests/` — 270 synthetic unit and integration tests
+- `tests/` — 282 synthetic unit and integration tests
 - `docs/retrieval-v2-validation.md` — successes, failures, costs, and limits
 
 Private memories, Work Context content, runtime databases, hidden evaluation
@@ -135,7 +135,7 @@ sets, and consumed seals are deliberately excluded from this repository.
 
 | Surface | Result |
 | --- | ---: |
-| Published unit and integration suite | **270 / 270 pass** |
+| Published unit and integration suite | **282 / 282 pass** |
 | Public synthetic H3 Recall@5, three cold runs | **0.8800 / 0.8867 / 0.8800** |
 | Public synthetic no-answer FPR | **0 / 0 / 0** |
 | Ordered multihop public slice | **30 / 30** |

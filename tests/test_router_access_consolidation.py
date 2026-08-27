@@ -42,22 +42,22 @@ EXPECTED_BASELINE_DIGESTS = {
     "ba4dc7d89104da4cf393": "422461f2062da86a2cbd13ca25e55f0720a4ff39c51b3752b1a8186107fa91bf",
     "b346a4ce508716037bb6": "161cc89c537b36aeccfb5be4256792bd947f434bc077a6ffa21b10dac89b5e60",
     "61c594a2bba7a72cd0fc": "40044c4e97bddeb363d4b159430a81557780425107f5efff0c6422ff633e6411",
-    "a44cf72d9a81dafc7c06": "6cc431ca49b5960aabb437a3691ef8cad4c55175a144cc171193cab183379e80",
-    "0f8cab6fb505a2ae5d2e": "6cc431ca49b5960aabb437a3691ef8cad4c55175a144cc171193cab183379e80",
-    "f469cc989e2df0d0f866": "af7542ee1dfdfd1cb0eddea1c3ffc553e727d7746721d2f346393995aeea97c2",
-    "c5d97a9b1c8c0a2abaee": "2257a0d0abf4cd9b0ee96467a0911fce4931b95bbe39f0a3b934d27af27dca86",
-    "5c094a2180b3447b2481": "386316175023479a4b7abd3b121a0ba3fba4c86196c5e59130c4f9ab93698877",
-    "dbd9d13f64a7db1f1e3d": "8268e4a685705f2fd2b6bf7a008f81c212fca0c109db43ff249075ab659affde",
-    "615facc6f08e84770a62": "85c95df075ee66827cff251dc97a6a268b575a4eb2f969a9add85994e646e316",
-    "f9ca69acfa1cd5436b80": "386316175023479a4b7abd3b121a0ba3fba4c86196c5e59130c4f9ab93698877",
-    "f4a8938db9d4b270cb9e": "6cc431ca49b5960aabb437a3691ef8cad4c55175a144cc171193cab183379e80",
-    "35c535fddb310931bd50": "6cc431ca49b5960aabb437a3691ef8cad4c55175a144cc171193cab183379e80",
-    "c34b41249bd02d646a18": "d36cf488dea6662456d6ce6457e34db3d9147b5cdd0d3e876d801c7674459520",
-    "1f5196a138e710117f19": "2257a0d0abf4cd9b0ee96467a0911fce4931b95bbe39f0a3b934d27af27dca86",
-    "ce3fac667b7a23d319bd": "386316175023479a4b7abd3b121a0ba3fba4c86196c5e59130c4f9ab93698877",
-    "7a60c5e754de00bd1f09": "59137853066e1b52a16201f13ae7ebc12a3b5cdcbcb0c410f2b4dd2c3e43f94c",
-    "8ada7dfef02f2e4c2f93": "85c95df075ee66827cff251dc97a6a268b575a4eb2f969a9add85994e646e316",
-    "d0a42bda2d4f3633dc7d": "386316175023479a4b7abd3b121a0ba3fba4c86196c5e59130c4f9ab93698877",
+    "dea10c85509a1bd5c31e": "6cc431ca49b5960aabb437a3691ef8cad4c55175a144cc171193cab183379e80",
+    "acf36f34ad20a2f47e19": "6cc431ca49b5960aabb437a3691ef8cad4c55175a144cc171193cab183379e80",
+    "37d50f4e9eb5733d4f32": "af7542ee1dfdfd1cb0eddea1c3ffc553e727d7746721d2f346393995aeea97c2",
+    "c0616c5a947f909a66b9": "2257a0d0abf4cd9b0ee96467a0911fce4931b95bbe39f0a3b934d27af27dca86",
+    "04f840bcc39df9de8251": "386316175023479a4b7abd3b121a0ba3fba4c86196c5e59130c4f9ab93698877",
+    "8ef46953f6ddfa9f4340": "8268e4a685705f2fd2b6bf7a008f81c212fca0c109db43ff249075ab659affde",
+    "35388f357080632c01f4": "85c95df075ee66827cff251dc97a6a268b575a4eb2f969a9add85994e646e316",
+    "df912976e84e742cf39e": "386316175023479a4b7abd3b121a0ba3fba4c86196c5e59130c4f9ab93698877",
+    "5a0cce124611f2a86858": "6cc431ca49b5960aabb437a3691ef8cad4c55175a144cc171193cab183379e80",
+    "9c5b6ec47725d45a9454": "6cc431ca49b5960aabb437a3691ef8cad4c55175a144cc171193cab183379e80",
+    "6a047e5042a7ffcbf615": "d36cf488dea6662456d6ce6457e34db3d9147b5cdd0d3e876d801c7674459520",
+    "e46207c521a3154e7d76": "2257a0d0abf4cd9b0ee96467a0911fce4931b95bbe39f0a3b934d27af27dca86",
+    "82361a3dc9c910dbfc17": "386316175023479a4b7abd3b121a0ba3fba4c86196c5e59130c4f9ab93698877",
+    "182637a88b821ce194c8": "59137853066e1b52a16201f13ae7ebc12a3b5cdcbcb0c410f2b4dd2c3e43f94c",
+    "e35c4d07fc3fd2023149": "85c95df075ee66827cff251dc97a6a268b575a4eb2f969a9add85994e646e316",
+    "eb0fb1db318fa3e465b7": "386316175023479a4b7abd3b121a0ba3fba4c86196c5e59130c4f9ab93698877",
     "d1ddaeb9ea6e46f4b318": "eca3a21acade039ba62daa2cdea5d1f61ff33ddf6d07e613c3dcb05bc77786e3",
     "13590104f6094bdbe8dd": "3e06d1a421b356c6f9d054e425dd7a7bfc8b3d2f5e8ab085dde8b1532822c21f",
     "4d0dbd25f46b8b9375a0": "3e06d1a421b356c6f9d054e425dd7a7bfc8b3d2f5e8ab085dde8b1532822c21f",
@@ -1127,9 +1127,11 @@ class RouterAccessDifferentialTests(unittest.TestCase):
                     "call": "cli",
                     "relative": relative,
                     "arguments": arguments,
-                    # argparse help headings intentionally vary by Python minor.
-                    # Keep byte-exact evidence per runtime instead of normalizing it.
-                    "python_runtime": f"{sys.version_info.major}.{sys.version_info.minor}",
+                    # Python 3.9 and 3.10+ use different argparse help headings.
+                    # Keep byte-exact evidence per output family instead of normalizing it.
+                    "argparse_output_family": (
+                        "py39" if sys.version_info < (3, 10) else "py310_plus"
+                    ),
                 }
                 candidate = self.run_cli(ROOT, relative, *arguments)
                 if self.baseline_available:

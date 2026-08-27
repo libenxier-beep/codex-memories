@@ -6,6 +6,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+# Preserve the baseline module's observable namespace for this compatibility
+# window. These re-exports are legacy-only, not canonical API, and retire with
+# this adapter.
 from retrieval_v2_knowledge_router import (
     CURRENT_SOURCE_SAFETY_DIRECT_SIGNALS,
     CURRENT_SOURCE_SAFETY_DYNAMIC_TOPICS,
