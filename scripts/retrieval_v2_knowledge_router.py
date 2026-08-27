@@ -9,11 +9,13 @@ import io
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
 import unicodedata
 from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import date
@@ -32,6 +34,9 @@ MAX_SNAPSHOT_FILES = 5000
 # snapshot bounded while allowing the current governed corpus plus review
 # headroom; individual document reads remain exact-blob and policy-gated.
 MAX_SNAPSHOT_BYTES = 384 * 1024 * 1024
+LEGACY_MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
+LEGACY_MAX_GIT_BATCH_INPUT_BYTES = 1024
+LEGACY_MAX_GIT_BATCH_OUTPUT_BYTES = 4 * 1024 * 1024
 FORBIDDEN_COLLECTION_FRAGMENTS = ("personal_memories", "personal-memory", "personal memory")
 PRIVATE_STORE_SIGNALS = (
     "personal_memories",
@@ -295,6 +300,38 @@ class CollectionSource:
         return {"source_policy": self.policy, "source_commit": self.revision}
 
 
+@dataclass(frozen=True)
+class RouterProfile:
+    expanded_context_routing: bool
+    include_authority_binding: bool
+    trusted_git: bool
+    max_snapshot_bytes: int
+    max_batch_input_bytes: Optional[int] = None
+    max_batch_output_bytes: Optional[int] = None
+    verify_batch_sizes: bool = False
+
+
+V2_ROUTER_PROFILE = RouterProfile(
+    expanded_context_routing=True,
+    include_authority_binding=False,
+    trusted_git=False,
+    max_snapshot_bytes=MAX_SNAPSHOT_BYTES,
+)
+LEGACY_ROUTER_PROFILE = RouterProfile(
+    expanded_context_routing=False,
+    include_authority_binding=True,
+    trusted_git=True,
+    max_snapshot_bytes=LEGACY_MAX_SNAPSHOT_BYTES,
+    max_batch_input_bytes=LEGACY_MAX_GIT_BATCH_INPUT_BYTES,
+    max_batch_output_bytes=LEGACY_MAX_GIT_BATCH_OUTPUT_BYTES,
+    verify_batch_sizes=True,
+)
+_ROUTER_PROFILE: ContextVar[RouterProfile] = ContextVar(
+    "knowledge_router_profile",
+    default=V2_ROUTER_PROFILE,
+)
+
+
 def _normalize(value: str) -> str:
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value).casefold()).strip()
 
@@ -362,6 +399,46 @@ def _query_fingerprint(query: str) -> str:
     return hashlib.sha256(query.encode("utf-8")).hexdigest()[:16]
 
 
+def _authority_binding(
+    *,
+    parent_revision: str | None,
+    registry_digest: str | None,
+    sources: dict[str, CollectionSource],
+) -> dict[str, Any]:
+    source_records = [
+        {
+            "collection_id": collection_id,
+            "source_policy": source.policy,
+            "source_revision": source.revision,
+        }
+        for collection_id, source in sorted(sources.items())
+    ]
+    source_set_sha256 = hashlib.sha256(
+        json.dumps(
+            source_records,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    body = {
+        "schema_version": 1,
+        "parent_revision": parent_revision,
+        "registry_sha256": registry_digest,
+        "source_count": len(source_records),
+        "source_set_sha256": source_set_sha256,
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            body,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return {**body, "binding_sha256": digest}
+
+
 def _requires_current_source_safety_floor(query: str) -> bool:
     """Close high-risk freshness gaps left by a narrower pinned router engine."""
     normalized = _normalize(query)
@@ -422,7 +499,30 @@ def _is_private_profile_request(query: str) -> bool:
     )
 
 
+def _trusted_git_executable() -> str:
+    for candidate in ("/usr/bin/git", "/bin/git"):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    resolved = shutil.which("git", path=os.defpath)
+    if resolved is None or not os.path.isabs(resolved):
+        raise ValueError("a trusted absolute Git executable is required")
+    return os.path.realpath(resolved)
+
+
 def _governed_git_environment() -> dict[str, str]:
+    if _ROUTER_PROFILE.get().trusted_git:
+        return {
+            "PATH": "/usr/bin:/bin",
+            "HOME": os.devnull,
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_COUNT": "0",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_TERMINAL_PROMPT": "0",
+            "LANG": "C",
+            "LC_ALL": "C",
+        }
     environment = dict(os.environ)
     for key in (
         "GIT_DIR",
@@ -441,7 +541,10 @@ def _governed_git_environment() -> dict[str, str]:
 def _run_git(cwd: Path, *args: str) -> str:
     try:
         result = subprocess.run(
-            ["git", *args],
+            [
+                _trusted_git_executable() if _ROUTER_PROFILE.get().trusted_git else "git",
+                *args,
+            ],
             cwd=cwd,
             env=_governed_git_environment(),
             stdout=subprocess.PIPE,
@@ -463,7 +566,10 @@ def _run_git_bytes(
 ) -> bytes:
     try:
         result = subprocess.run(
-            ["git", *args],
+            [
+                _trusted_git_executable() if _ROUTER_PROFILE.get().trusted_git else "git",
+                *args,
+            ],
             cwd=cwd,
             env=_governed_git_environment(),
             input=input_bytes,
@@ -502,11 +608,12 @@ def _source_file_bytes(source: CollectionSource, relative: Path) -> bytes:
 
 @contextmanager
 def _materialize_source(source: CollectionSource) -> Iterator[CollectionSource]:
+    profile = _ROUTER_PROFILE.get()
     args = ["ls-tree", "-r", "-z", "-l", source.revision]
     if source.tree_prefix.parts:
         args.extend(["--", source.tree_prefix.as_posix()])
     tree = _run_git_bytes(source.repository, *args)
-    entries: list[tuple[Path, str]] = []
+    entries: list[tuple[Path, str, int]] = []
     normalized_paths: set[tuple[str, ...]] = set()
     normalized_directories: dict[tuple[str, ...], tuple[str, ...]] = {}
     total_bytes = 0
@@ -542,45 +649,72 @@ def _materialize_source(source: CollectionSource) -> Iterator[CollectionSource]:
         ):
             raise ValueError("governed Git tree contains colliding paths")
         normalized_paths.add(normalized)
-        entries.append((relative, object_id))
+        entries.append((relative, object_id, size))
         total_bytes += size
-        if len(entries) > MAX_SNAPSHOT_FILES or total_bytes > MAX_SNAPSHOT_BYTES:
+        if len(entries) > MAX_SNAPSHOT_FILES or total_bytes > profile.max_snapshot_bytes:
             raise ValueError("governed Git snapshot exceeds its size limit")
     if not entries:
         raise ValueError("governed Git tree is empty")
 
-    batch_input = ("\n".join(object_id for _, object_id in entries) + "\n").encode("ascii")
-    batch = io.BytesIO(
-        _run_git_bytes(
-            source.repository,
-            "cat-file",
-            "--batch",
-            input_bytes=batch_input,
-        )
-    )
     with tempfile.TemporaryDirectory(prefix="knowledge-route-") as temporary:
         snapshot = Path(temporary)
-        for relative, expected_object_id in entries:
-            header = batch.readline().rstrip(b"\n")
-            try:
-                object_id, object_type, raw_size = header.decode("ascii").split(" ")
-                size = int(raw_size)
-            except (ValueError, UnicodeDecodeError) as exc:
-                raise ValueError("governed Git blob batch is invalid") from exc
-            if (
-                object_id != expected_object_id
-                or object_type != "blob"
-                or size < 0
-            ):
-                raise ValueError("governed Git blob batch does not match its tree")
-            content = batch.read(size)
-            if len(content) != size or batch.read(1) != b"\n":
-                raise ValueError("governed Git blob batch is truncated")
-            target = snapshot / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
-        if batch.read(1):
-            raise ValueError("governed Git blob batch contains trailing data")
+        offset = 0
+        while offset < len(entries):
+            end = offset
+            predicted_input_bytes = 0
+            predicted_bytes = 0
+            while end < len(entries):
+                entry_size = entries[end][2]
+                predicted_input_entry_bytes = 41
+                predicted_entry_bytes = entry_size + 96
+                if end > offset and (
+                    profile.max_batch_input_bytes is not None
+                    and predicted_input_bytes + predicted_input_entry_bytes
+                    > profile.max_batch_input_bytes
+                    or profile.max_batch_output_bytes is not None
+                    and predicted_bytes + predicted_entry_bytes
+                    > profile.max_batch_output_bytes
+                ):
+                    break
+                predicted_input_bytes += predicted_input_entry_bytes
+                predicted_bytes += predicted_entry_bytes
+                end += 1
+            chunk = entries[offset:end]
+            batch_input = (
+                "\n".join(object_id for _, object_id, _ in chunk) + "\n"
+            ).encode("ascii")
+            batch = io.BytesIO(
+                _run_git_bytes(
+                    source.repository,
+                    "cat-file",
+                    "--batch",
+                    input_bytes=batch_input,
+                )
+            )
+            for relative, expected_object_id, expected_size in chunk:
+                header = batch.readline().rstrip(b"\n")
+                try:
+                    object_id, object_type, raw_size = header.decode("ascii").split(" ")
+                    size = int(raw_size)
+                except (ValueError, UnicodeDecodeError) as exc:
+                    raise ValueError("governed Git blob batch is invalid") from exc
+                if (
+                    object_id != expected_object_id
+                    or object_type != "blob"
+                    or size < 0
+                    or profile.verify_batch_sizes
+                    and size != expected_size
+                ):
+                    raise ValueError("governed Git blob batch does not match its tree")
+                content = batch.read(size)
+                if len(content) != size or batch.read(1) != b"\n":
+                    raise ValueError("governed Git blob batch is truncated")
+                target = snapshot / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            if batch.read(1):
+                raise ValueError("governed Git blob batch contains trailing data")
+            offset = end
         materialized_root = snapshot / source.tree_prefix if source.tree_prefix.parts else snapshot
         if not materialized_root.is_dir() or materialized_root.is_symlink():
             raise ValueError("governed Git snapshot root is invalid")
@@ -686,6 +820,32 @@ def resolve_collection_source(root: Path, collection: dict[str, Any]) -> Collect
     return source
 
 
+def _resolve_collection_sources(
+    root: Path,
+    registry: dict[str, Any],
+    *,
+    profile: RouterProfile,
+) -> dict[str, CollectionSource]:
+    token = _ROUTER_PROFILE.set(profile)
+    try:
+        return resolve_collection_sources(root, registry)
+    finally:
+        _ROUTER_PROFILE.reset(token)
+
+
+def _resolve_collection_source(
+    root: Path,
+    collection: dict[str, Any],
+    *,
+    profile: RouterProfile,
+) -> CollectionSource:
+    token = _ROUTER_PROFILE.set(profile)
+    try:
+        return resolve_collection_source(root, collection)
+    finally:
+        _ROUTER_PROFILE.reset(token)
+
+
 def _assert_runtime_sources_stable(
     root: Path,
     registry: dict[str, Any],
@@ -723,6 +883,12 @@ def _finalize_result(
     if _committed_file_sha256(root, parent_revision, REGISTRY_PATH) != registry_digest:
         raise ValueError("parent collection registry changed during routing")
     _assert_runtime_sources_stable(root, registry, sources)
+    if _ROUTER_PROFILE.get().include_authority_binding:
+        result["authority_binding"] = _authority_binding(
+            parent_revision=parent_revision,
+            registry_digest=registry_digest,
+            sources=sources,
+        )
     return result
 
 
@@ -1282,13 +1448,14 @@ def _attach_exact_document(
     return result
 
 
-def route_knowledge(
+def _route_knowledge_impl(
     query: str,
     root: Path = ROOT,
     *,
     read_selector: Optional[str] = None,
 ) -> dict[str, Any]:
     """Route against committed snapshots and optionally return one authorized exact document."""
+    profile = _ROUTER_PROFILE.get()
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must be a non-empty string")
     if read_selector is not None and (
@@ -1310,6 +1477,12 @@ def route_knowledge(
             "reason_codes": ["private_profile_explicit_only"],
             "trace": {"stage": "privacy_boundary", "engine_version": "2"},
         }
+        if profile.include_authority_binding:
+            result["authority_binding"] = _authority_binding(
+                parent_revision=None,
+                registry_digest=None,
+                sources={},
+            )
         if read_selector is not None:
             result["document"] = None
         return result
@@ -1332,54 +1505,62 @@ def route_knowledge(
         result: dict[str, Any],
         used_sources: dict[str, CollectionSource],
     ) -> dict[str, Any]:
-        existing_alternatives = result.get("alternatives", [])
-        if not isinstance(existing_alternatives, list):
-            raise ValueError("route alternatives must be an array")
-        seen = {
-            (alternative.get("collection_id"), alternative.get("context_id"), alternative.get("path"))
-            for alternative in existing_alternatives
-            if isinstance(alternative, dict)
-        }
-        for alternative in shared_concept_alternatives:
-            identity = (
-                alternative.get("collection_id"),
-                alternative.get("context_id"),
-                alternative.get("path"),
+        if profile.expanded_context_routing:
+            existing_alternatives = result.get("alternatives", [])
+            if not isinstance(existing_alternatives, list):
+                raise ValueError("route alternatives must be an array")
+            seen = {
+                (
+                    alternative.get("collection_id"),
+                    alternative.get("context_id"),
+                    alternative.get("path"),
+                )
+                for alternative in existing_alternatives
+                if isinstance(alternative, dict)
+            }
+            for alternative in shared_concept_alternatives:
+                identity = (
+                    alternative.get("collection_id"),
+                    alternative.get("context_id"),
+                    alternative.get("path"),
+                )
+                if alternative.get("context_id") == result.get("context_id") or identity in seen:
+                    continue
+                existing_alternatives.append(alternative)
+                seen.add(identity)
+            result["alternatives"] = existing_alternatives
+            formal_confidence = result.pop("_formal_confidence", None)
+            formal_context = result.get("context_id")
+            reason_codes = result.get("reason_codes", [])
+            conflicting_alternative = any(
+                isinstance(alternative, dict)
+                and alternative.get("context_id") not in (None, formal_context)
+                for alternative in existing_alternatives
             )
-            if alternative.get("context_id") == result.get("context_id") or identity in seen:
-                continue
-            existing_alternatives.append(alternative)
-            seen.add(identity)
-        result["alternatives"] = existing_alternatives
-        formal_confidence = result.pop("_formal_confidence", None)
-        formal_context = result.get("context_id")
-        reason_codes = result.get("reason_codes", [])
-        conflicting_alternative = any(
-            isinstance(alternative, dict)
-            and alternative.get("context_id") not in (None, formal_context)
-            for alternative in existing_alternatives
-        )
-        weak_term_only_route = (
-            isinstance(reason_codes, list)
-            and bool(reason_codes)
-            and all(isinstance(reason, str) and reason.startswith("term:") for reason in reason_codes)
-        )
-        if (
-            result.get("decision") == "load"
-            and conflicting_alternative
-            and weak_term_only_route
-            and formal_confidence in {"low", "medium"}
-        ):
-            result.update(
-                {
-                    "decision": "ambiguous",
-                    "context_id": None,
-                    "first_file": None,
-                    "deeper_suggestions": [],
-                    "deeper_matches": [],
-                    "reason_codes": [*reason_codes, "structured_alternative_conflict"],
-                }
+            weak_term_only_route = (
+                isinstance(reason_codes, list)
+                and bool(reason_codes)
+                and all(
+                    isinstance(reason, str) and reason.startswith("term:")
+                    for reason in reason_codes
+                )
             )
+            if (
+                result.get("decision") == "load"
+                and conflicting_alternative
+                and weak_term_only_route
+                and formal_confidence in {"low", "medium"}
+            ):
+                result.update(
+                    {
+                        "decision": "ambiguous",
+                        "context_id": None,
+                        "first_file": None,
+                        "deeper_suggestions": [],
+                        "deeper_matches": [],
+                        "reason_codes": [*reason_codes, "structured_alternative_conflict"],
+                    }
+                )
         _attach_exact_document(
             result,
             read_selector=read_selector,
@@ -1427,14 +1608,23 @@ def route_knowledge(
         item for item in registry["collections"] if item["mount"] == engine_mount
     )
     engine_source = sources[engine_collection["id"]]
-    context_registries = _load_context_registries(registry, sources, engine)
-    shared_concept_alternatives = _shared_concept_alternatives(
-        query,
-        context_registries=context_registries,
-        collections=collections,
-        sources=sources,
+    context_registries = (
+        _load_context_registries(registry, sources, engine)
+        if profile.expanded_context_routing
+        else {}
     )
-    explicit_binding = _explicit_context_binding(query, context_registries)
+    if profile.expanded_context_routing:
+        shared_concept_alternatives = _shared_concept_alternatives(
+            query,
+            context_registries=context_registries,
+            collections=collections,
+            sources=sources,
+        )
+    explicit_binding = (
+        _explicit_context_binding(query, context_registries)
+        if profile.expanded_context_routing
+        else None
+    )
     if explicit_binding is not None:
         selected = {
             "decision": "load",
@@ -1446,7 +1636,10 @@ def route_knowledge(
     else:
         selected = engine.route(
             query,
-            _virtual_collection_registry(registry, context_registries),
+            _virtual_collection_registry(
+                registry,
+                context_registries if profile.expanded_context_routing else None,
+            ),
             root=None,
         )
     if selected["decision"] != "load":
@@ -1465,7 +1658,11 @@ def route_knowledge(
                 selected.get("alternatives", []),
             ),
             "current_sources_required": selected.get("current_sources_required", False),
-            "query_fingerprint": selected["query_fingerprint"],
+            "query_fingerprint": (
+                selected["query_fingerprint"]
+                if profile.expanded_context_routing
+                else _query_fingerprint(query)
+            ),
             "reason_codes": ["ambiguous_collection" if ambiguous else "no_collection_match"],
             "trace": {
                 "stage": "collection_selection",
@@ -1507,7 +1704,11 @@ def route_knowledge(
             },
         }
 
-    if routed.get("decision") == "load" and isinstance(routed.get("primary"), str):
+    if (
+        profile.expanded_context_routing
+        and routed.get("decision") == "load"
+        and isinstance(routed.get("primary"), str)
+    ):
         routed_context = next(
             (
                 context
@@ -1557,7 +1758,7 @@ def route_knowledge(
             for item in selected.get("alternatives", [])
         )
         ambiguous = "ambiguous_match" in routed.get("reasons", []) or plausible_other_collection
-        if plausible_other_collection:
+        if plausible_other_collection and profile.expanded_context_routing:
             collection_alternatives = [
                 {
                     "context_id": collection_id,
@@ -1588,7 +1789,11 @@ def route_knowledge(
             "deeper_matches": [],
             "alternatives": alternatives,
             "current_sources_required": routed.get("current_sources_required", False),
-            "query_fingerprint": routed["query_fingerprint"],
+            "query_fingerprint": (
+                routed["query_fingerprint"]
+                if profile.expanded_context_routing
+                else _query_fingerprint(query)
+            ),
             "reason_codes": [
                 "ambiguous_collection"
                 if plausible_other_collection
@@ -1632,9 +1837,12 @@ def route_knowledge(
             routed.get("alternatives", []),
         ),
         "current_sources_required": engine_requires_current or safety_floor_requires_current,
-        "query_fingerprint": routed["query_fingerprint"],
+        "query_fingerprint": (
+            routed["query_fingerprint"]
+            if profile.expanded_context_routing
+            else _query_fingerprint(query)
+        ),
         "reason_codes": reason_codes,
-        "_formal_confidence": routed.get("confidence"),
         "trace": {
             "stage": "context_selection",
             "engine_version": str(routed.get("trace", {}).get("router_version", "2")),
@@ -1644,17 +1852,55 @@ def route_knowledge(
             **collection_source.public_trace(),
         },
     }
+    if profile.expanded_context_routing:
+        result["_formal_confidence"] = routed.get("confidence")
     return finish(result, sources)
 
 
-def evaluate_knowledge_routes(root: Path = ROOT) -> dict[str, Any]:
+def _route_knowledge(
+    query: str,
+    root: Path = ROOT,
+    *,
+    read_selector: Optional[str] = None,
+    profile: RouterProfile,
+) -> dict[str, Any]:
+    token = _ROUTER_PROFILE.set(profile)
+    try:
+        return _route_knowledge_impl(query, root=root, read_selector=read_selector)
+    finally:
+        _ROUTER_PROFILE.reset(token)
+
+
+def route_knowledge(
+    query: str,
+    root: Path = ROOT,
+    *,
+    read_selector: Optional[str] = None,
+) -> dict[str, Any]:
+    return _route_knowledge(
+        query,
+        root=root,
+        read_selector=read_selector,
+        profile=V2_ROUTER_PROFILE,
+    )
+
+
+def _evaluate_knowledge_routes(
+    root: Path,
+    *,
+    profile: RouterProfile,
+) -> dict[str, Any]:
     """Evaluate the parent collection decision and adapted context result end to end."""
     total = passed = 0
     failures: list[dict[str, Any]] = []
     with (root / EVAL_PATH).open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             total += 1
-            routed = route_knowledge(row["user_request"], root=root)
+            routed = _route_knowledge(
+                row["user_request"],
+                root=root,
+                profile=profile,
+            )
             expected = {
                 "decision": row["expected_decision"],
                 "collection_id": row["expected_collection"] or None,
@@ -1674,3 +1920,7 @@ def evaluate_knowledge_routes(root: Path = ROOT) -> dict[str, Any]:
                     }
                 )
     return {"schema_version": 1, "total": total, "passed": passed, "failures": failures}
+
+
+def evaluate_knowledge_routes(root: Path = ROOT) -> dict[str, Any]:
+    return _evaluate_knowledge_routes(root, profile=V2_ROUTER_PROFILE)
