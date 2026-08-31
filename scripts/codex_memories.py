@@ -60,15 +60,34 @@ def _ensure_safe_directory(path: Path, *, label: str) -> Path:
 
 def _copy_runtime(prefix: Path) -> Path:
     runtime = prefix / "runtime"
-    runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".runtime-staging-", dir=str(prefix)))
     ignored = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store")
-    for relative in RUNTIME_ALLOWLIST:
-        source = SOURCE_ROOT / relative
-        destination = runtime / relative
-        if source.is_dir():
-            shutil.copytree(source, destination, dirs_exist_ok=True, ignore=ignored)
-        else:
-            shutil.copy2(source, destination)
+    try:
+        for relative in RUNTIME_ALLOWLIST:
+            source = SOURCE_ROOT / relative
+            destination = staging / relative
+            if source.is_dir():
+                shutil.copytree(source, destination, ignore=ignored)
+            else:
+                shutil.copy2(source, destination)
+        previous = prefix / "runtime.previous"
+        if previous.exists():
+            if previous.is_symlink() or not previous.is_dir():
+                raise ValueError("runtime.previous must be a generated directory")
+            shutil.rmtree(previous)
+        if runtime.exists():
+            if runtime.is_symlink() or not runtime.is_dir():
+                raise ValueError("runtime must be a generated directory")
+            os.replace(runtime, previous)
+        try:
+            os.replace(staging, runtime)
+        except Exception:
+            if previous.exists() and not runtime.exists():
+                os.replace(previous, runtime)
+            raise
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
     return runtime
 
 
@@ -137,6 +156,9 @@ def _initialize_authority(authority: Path) -> str:
         probe = _git(authority, "rev-parse", "--is-inside-work-tree")
         if probe.returncode != 0 or probe.stdout.strip() != "true":
             raise ValueError("an existing authority must be a Git repository")
+        top = _git(authority, "rev-parse", "--show-toplevel")
+        if top.returncode != 0 or Path(top.stdout.strip()).resolve(strict=True) != authority:
+            raise ValueError("an existing authority must be the Git repository root")
         return "preserved"
 
     authority.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -290,7 +312,13 @@ def _git_ready(authority: Path) -> bool:
     if not authority.is_dir():
         return False
     probe = _git(authority, "rev-parse", "HEAD^{commit}")
-    return probe.returncode == 0 and bool(probe.stdout.strip())
+    top = _git(authority, "rev-parse", "--show-toplevel")
+    return (
+        probe.returncode == 0
+        and bool(probe.stdout.strip())
+        and top.returncode == 0
+        and Path(top.stdout.strip()).resolve(strict=True) == authority.resolve(strict=True)
+    )
 
 
 def doctor(args: argparse.Namespace) -> dict[str, Any]:

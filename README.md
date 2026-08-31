@@ -163,7 +163,7 @@ configuration owner, and local `RecallPolicy`. See the
   atomic authority control plane
 - `schemas/` — machine-readable contracts
 - `scripts/codex_memories.py` and `install.sh` — safe installer and deployment doctor
-- `tests/` — 287 synthetic unit and integration tests
+- `tests/` — 289 synthetic unit and integration tests
 - `docs/retrieval-v2-validation.md` — successes, failures, costs, and limits
 
 Private memories, Work Context content, runtime databases, hidden evaluation
@@ -173,7 +173,7 @@ sets, and consumed seals are deliberately excluded from this repository.
 
 | Surface | Result |
 | --- | ---: |
-| Published unit and integration suite | **287 / 287 pass** |
+| Published unit and integration suite | **289 / 289 pass** |
 | Public synthetic H3 Recall@5, three cold runs | **0.8800 / 0.8867 / 0.8800** |
 | Public synthetic no-answer FPR | **0 / 0 / 0** |
 | Ordered multihop public slice | **30 / 30** |

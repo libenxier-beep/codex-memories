@@ -69,7 +69,7 @@ cd codex-memories
 python3 -m unittest discover -s tests
 ```
 
-当前公开仓库包含 287 项合成单元与集成测试。公开 synthetic 三次
+当前公开仓库包含 289 项合成单元与集成测试。公开 synthetic 三次
 Recall@5 为 `0.8800 / 0.8867 / 0.8800`，no-answer FPR 均为 `0`；
 但一次仅含 6 条可回答问题的小型 hidden seal 中，候选只有 `3/6`，因此
 被正确拒绝。完整说明见[验证记录](docs/retrieval-v2-validation.md)。

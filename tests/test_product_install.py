@@ -176,6 +176,68 @@ class ProductInstallTests(unittest.TestCase):
             self.assertEqual(manifest["router_profile"], "collections")
             self.assertIn("--router-profile collections", command)
 
+    def test_install_rejects_a_directory_nested_inside_another_git_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parent = root / "parent-repository"
+            authority = parent / "nested-authority"
+            authority.mkdir(parents=True)
+            (authority / "memory.md").write_text("synthetic\n", encoding="utf-8")
+            initialized = subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=parent,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(INSTALLER),
+                    "install",
+                    "--prefix",
+                    str(root / "app"),
+                    "--authority",
+                    str(authority),
+                    "--codex-home",
+                    str(root / "codex-home"),
+                    "--skip-index",
+                    "--format",
+                    "json",
+                ],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn("repository root", json.loads(completed.stdout)["error"]["message"])
+
+    def test_reinstall_replaces_the_generated_runtime_without_stale_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix, authority, codex_home = self.install(root)
+            stale = prefix / "runtime" / "scripts" / "removed-in-upgrade.py"
+            stale.write_text("obsolete\n", encoding="utf-8")
+
+            self.run_installer(
+                "install",
+                "--prefix",
+                str(prefix),
+                "--authority",
+                str(authority),
+                "--codex-home",
+                str(codex_home),
+                "--skip-index",
+            )
+
+            self.assertFalse(stale.exists())
+
     def test_local_authority_profile_recalls_without_a_collection_registry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
