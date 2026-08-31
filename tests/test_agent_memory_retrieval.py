@@ -12,7 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from agent_memory_system.retrieval import GovernedHybridRetrieval  # noqa: E402
-from agent_memory_system.embedding import LocalNaturalLanguageEmbedding  # noqa: E402
+from agent_memory_system.embedding import (  # noqa: E402
+    EmbeddingUnavailable,
+    LocalNaturalLanguageEmbedding,
+)
 from memory_control_plane.projection import MemoryProjection  # noqa: E402
 from memory_control_plane.recall_policy import RecallPolicy  # noqa: E402
 
@@ -966,7 +969,12 @@ class GovernedHybridRetrievalTests(unittest.TestCase):
                 cache_dir=Path(temporary),
             )
 
-            description = provider.describe()
+            try:
+                description = provider.describe()
+            except EmbeddingUnavailable as error:
+                if "simplified Chinese sentence embedding is unavailable" in str(error):
+                    self.skipTest("macOS runner does not provide the Simplified Chinese embedding asset")
+                raise
             vectors = provider.embed(["显式授权", "检查点恢复"])
 
             self.assertEqual(description["status"], "ready")
