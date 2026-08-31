@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a bounded improvement to the public product surface.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What is difficult today, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: interface
+    attributes:
+      label: Smallest useful interface
+      description: Describe the caller-facing behavior, not only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Privacy and trust boundary
+      description: Explain what remains local and what new authority is required.
+    validations:
+      required: true

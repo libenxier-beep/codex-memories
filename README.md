@@ -2,7 +2,7 @@
 
 **Local-first persistent memory for OpenAI Codex — governed recall, progressive disclosure, and no hosted vector database.**
 
-[![Tests](https://img.shields.io/badge/tests-282%20passing-brightgreen)](https://github.com/libenxier-beep/codex-memories/actions)
+[![Tests](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml/badge.svg)](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Local First](https://img.shields.io/badge/storage-local--first-6f42c1)](#privacy-and-trust-boundary)
@@ -21,6 +21,42 @@ three-round progressive disclosure loop driven by the current Codex model.
 > real Codex environment and its public test suite passes, but the independent
 > Large-B3 evaluation was not completed. Read the
 > [validation record](docs/retrieval-v2-validation.md) before making quality claims.
+
+## Install in five minutes
+
+Requirements: Python 3.9+, Git, and a local Codex installation.
+
+```bash
+git clone https://github.com/libenxier-beep/codex-memories.git
+cd codex-memories
+./install.sh
+~/.local/share/codex-memories/bin/codex-memories doctor
+```
+
+The installer creates three deliberately separate surfaces:
+
+| Surface | Default location | Contains |
+| --- | --- | --- |
+| Runtime | `~/.local/share/codex-memories` | replaceable product code and CLI |
+| Authority | `~/.codex/memories` | your private, Git-backed durable memory |
+| Sidecar | `~/.codex/memory-sidecar` | disposable indexes, state, and caches |
+
+It never edits `hooks.json`. Instead it writes a digest-bound
+`hooks.merge-plan.json` under the runtime directory so the configuration owner
+can review and merge it without losing existing hooks. Until that plan is
+applied, `doctor` reports `integration: review_required`—the runtime is installed,
+but automatic Codex capture and recall are not active yet.
+
+After reviewing the hook plan, try the product CLI directly:
+
+```bash
+~/.local/share/codex-memories/bin/codex-memories index
+~/.local/share/codex-memories/bin/codex-memories recall "governed local memory"
+~/.local/share/codex-memories/bin/codex-memories health
+```
+
+See the [Getting Started guide](docs/getting-started.md) for custom paths,
+hook-plan review, upgrading, rollback, and troubleshooting.
 
 ## Why Codex Memories?
 
@@ -110,10 +146,11 @@ python3 scripts/agent_memory.py \
   progressive rollback
 ```
 
-Codex hook installation is intentionally not a blind installer: the hook must
-be bound to the deployment's memory authority, trusted configuration owner, and
-local `RecallPolicy`. See the [hook protocol](docs/agent-memory-hook-protocol.md)
-and [progressive retrieval guide](docs/progressive-retrieval-v2.md).
+The product installer intentionally generates a review-only hook merge plan: the
+hook must remain bound to the deployment's memory authority, trusted
+configuration owner, and local `RecallPolicy`. See the
+[hook protocol](docs/agent-memory-hook-protocol.md) and
+[progressive retrieval guide](docs/progressive-retrieval-v2.md).
 
 ## What is included
 
@@ -125,7 +162,8 @@ and [progressive retrieval guide](docs/progressive-retrieval-v2.md).
 - `scripts/memory_control_plane/` — candidate, authorization, projection, and
   atomic authority control plane
 - `schemas/` — machine-readable contracts
-- `tests/` — 282 synthetic unit and integration tests
+- `scripts/codex_memories.py` and `install.sh` — safe installer and deployment doctor
+- `tests/` — 287 synthetic unit and integration tests
 - `docs/retrieval-v2-validation.md` — successes, failures, costs, and limits
 
 Private memories, Work Context content, runtime databases, hidden evaluation
@@ -135,7 +173,7 @@ sets, and consumed seals are deliberately excluded from this repository.
 
 | Surface | Result |
 | --- | ---: |
-| Published unit and integration suite | **282 / 282 pass** |
+| Published unit and integration suite | **287 / 287 pass** |
 | Public synthetic H3 Recall@5, three cold runs | **0.8800 / 0.8867 / 0.8800** |
 | Public synthetic no-answer FPR | **0 / 0 / 0** |
 | Ordered multihop public slice | **30 / 30** |
@@ -193,16 +231,17 @@ and Mem0 comparators, and that negative result remains public.
 
 ### Can I use it today?
 
-Advanced users can run and integrate it today. Expect to configure a local
-authority repository and trusted Codex hooks. A general-purpose installer and
-completed large independent benchmark remain future work.
+Yes, with an explicit final integration step. The guided installer creates an
+isolated runtime and starter private authority, then generates a review-only
+hook merge plan. A completed large independent benchmark remains future work.
 
 ## Contributing
 
-Issues and focused pull requests are welcome, especially for:
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a focused pull request.
+Issues are especially useful for:
 
 - reproducible public retrieval benchmarks;
-- simpler cross-platform installation;
+- installation and upgrade feedback across macOS and Linux;
 - real-world, privacy-preserving dogfood feedback;
 - multilingual and multihop retrieval failures;
 - latency and token-usage measurement.
