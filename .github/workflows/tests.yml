@@ -1,21 +1,30 @@
-name: tests
+name: Tests
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  unittest:
-    runs-on: ubuntu-latest
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.9"
+          - os: macos-latest
+            python: "3.11"
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
-      - name: Run synthetic unit and integration tests
+          python-version: ${{ matrix.python }}
+      - name: Run synthetic unit and integration suite
         run: python3 -m unittest discover -s tests

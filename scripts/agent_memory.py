@@ -40,7 +40,7 @@ from agent_memory_system.retrieval import (
     embedding_manifest_mismatches,
 )
 from agent_memory_system.store import AgentMemoryStore, stable_id
-from knowledge_router import route_knowledge
+from agent_memory_system.routing import route_memory_query
 from memory_control_plane.projection import MemoryProjection
 from memory_control_plane.recall_policy import (
     RecallPolicy,
@@ -49,6 +49,19 @@ from memory_control_plane.recall_policy import (
     verify_recall_request,
 )
 from memory_control import control_plane
+
+
+def route_knowledge(
+    query: str,
+    *,
+    root: Path,
+    read_selector: str | None = None,
+    profile: str = "auto",
+) -> dict[str, Any]:
+    """Compatibility seam for callers that patched the original router."""
+
+    del read_selector
+    return route_memory_query(query, root=root, profile=profile)
 
 
 def _trusted_git_executable() -> str:
@@ -127,6 +140,7 @@ class ProductionHookRuntime:
         store: AgentMemoryStore,
         root: Path,
         router_root: Path | None = None,
+        router_profile: str = "auto",
         authority_index: Path,
         hybrid_index: Path,
         embedding_cache: Path,
@@ -139,6 +153,7 @@ class ProductionHookRuntime:
         self.store = store
         self.root = root
         self.router_root = root if router_root is None else router_root
+        self.router_profile = router_profile
         self.authority_index = authority_index
         self.hybrid_index = hybrid_index
         self.embedding_cache = embedding_cache
@@ -336,7 +351,9 @@ class ProductionHookRuntime:
             return []
         try:
             privacy_route = route_knowledge(
-                query, root=self.router_root, read_selector=None
+                query,
+                root=getattr(self, "router_root", self.root),
+                profile=getattr(self, "router_profile", "auto"),
             )
             request = verify_recall_request(
                 query,
@@ -771,6 +788,12 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         help="trusted committed router authority (defaults to --root)",
     )
+    root.add_argument(
+        "--router-profile",
+        choices=("auto", "collections", "local-authority"),
+        default="auto",
+        help="query-classification adapter (auto uses collections when configured)",
+    )
     root.add_argument("--authority-index", type=Path, default=DEFAULT_AUTHORITY_INDEX)
     root.add_argument("--hybrid-index", type=Path, default=DEFAULT_HYBRID_INDEX)
     root.add_argument("--embedding-cache", type=Path, default=DEFAULT_EMBEDDING_CACHE)
@@ -948,6 +971,7 @@ def _runtime(args: argparse.Namespace, store: AgentMemoryStore) -> ProductionHoo
         store=store,
         root=args.root,
         router_root=args.router_root,
+        router_profile=args.router_profile,
         authority_index=args.authority_index,
         hybrid_index=args.hybrid_index,
         embedding_cache=args.embedding_cache,
@@ -1499,7 +1523,7 @@ def main() -> int:
             if args.query is not None:
                 router_root = args.router_root or args.root
                 route = route_knowledge(
-                    args.query, root=router_root, read_selector=None
+                    args.query, root=router_root, profile=args.router_profile
                 )
                 request = verify_recall_request(
                     args.query,
@@ -1549,7 +1573,7 @@ def main() -> int:
                 try:
                     router_root = args.router_root or args.root
                     route = route_knowledge(
-                        query, root=router_root, read_selector=None
+                        query, root=router_root, profile=args.router_profile
                     )
                     request = verify_recall_request(
                         query,

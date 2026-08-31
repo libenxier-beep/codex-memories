@@ -499,6 +499,12 @@ def _is_private_profile_request(query: str) -> bool:
     )
 
 
+def is_private_profile_request(query: str) -> bool:
+    """Public classifier seam shared by governed router adapters."""
+
+    return _is_private_profile_request(query)
+
+
 def _trusted_git_executable() -> str:
     for candidate in ("/usr/bin/git", "/bin/git"):
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
