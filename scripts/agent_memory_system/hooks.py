@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from typing import IO, Mapping, Protocol, Sequence
+from retrieval_v2_knowledge_router import BASIC_PROFILE_LOOKUP_HINT, needs_basic_profile
 
 from .offload import (
     OffloadError,
@@ -276,7 +277,7 @@ class CodexHookAdapter:
                     source_ref,
                 )
                 offload = ()
-            context = self._render_context(results, offload=offload, session_id=session_id)
+            context = self._render_context(results, offload=offload, session_id=session_id, query=query)
             if context is None:
                 return None
             return {
@@ -369,6 +370,7 @@ class CodexHookAdapter:
         *,
         offload: Sequence[Mapping[str, object]] = (),
         session_id: str = "",
+        query: str = "",
     ) -> str | None:
         header = (
             "[Agent Memory v1: canonical sources reopened and governance-filtered. "
@@ -376,6 +378,11 @@ class CodexHookAdapter:
         )
         lines = [header]
         accepted = 0
+        # Static navigation guidance is independent of recalled evidence. It
+        # never copies prompt text or private files into automatic context.
+        if needs_basic_profile(query) and len(header) + 1 + len(BASIC_PROFILE_LOOKUP_HINT) <= self.max_context_chars:
+            lines.append(BASIC_PROFILE_LOOKUP_HINT)
+            accepted += 1
         # Current-task state gets first admission. Production builds the
         # complete typed projection under an 1,800-char cap, so at the default
         # 4,000-char callback budget it receives at least the required 35%
