@@ -465,7 +465,35 @@ def _committed_file_sha256(root: Path, revision: str, relative: Path) -> str:
     return hashlib.sha256(_git_regular_blob(root, revision, relative)).hexdigest()
 
 
+# A read handoff, never personal content or permission to publish it.
+BASIC_PROFILE_LOOKUP_HINT = (
+    "[Personal profile lookup] Follow the active platform adapter to read "
+    "memories/agent_self/USER.md before asking for an existing name or education "
+    "background. Read only relevant linked personal records. Ask only for missing, "
+    "conflicting or stale facts; do not infer identity from paths or publish private data."
+)
+
+
+def needs_basic_profile(query: str, *, include_task_context: bool = True) -> bool:
+    """Recognize basic facts and tasks that need them; no profile files are read."""
+    text = _normalize(query)
+    direct = ("我叫什么", "我叫啥", "我的名字", "我学的是什么", "我读的什么", "我在哪所", "我在哪个学校")
+    if any(signal in text for signal in direct):
+        return True
+    if re.search(r"我的(?:姓名|名字|英文名|中文名|专业|学校|大学|学历|教育背景|教育经历)", text):
+        return True
+    if re.search(r"\bmy\s+(?:name|major|university|school|education)\b", text):
+        return True
+    if not include_task_context:
+        return False
+    personal = "我" in text or bool(re.search(r"\b(?:i|my|me)\b", text))
+    task = any(signal in text for signal in ("论文", "投稿", "期刊", "实习", "职业规划", "署名", "自我介绍", "简历", "my resume", "my thesis"))
+    return personal and task
+
+
 def _is_private_profile_request(query: str) -> bool:
+    if needs_basic_profile(query, include_task_context=False):
+        return True
     normalized = _normalize(query)
     if any(_contains_signal(normalized, signal) for signal in PRIVATE_STORE_SIGNALS):
         return True
@@ -1483,6 +1511,8 @@ def _route_knowledge_impl(
             "reason_codes": ["private_profile_explicit_only"],
             "trace": {"stage": "privacy_boundary", "engine_version": "2"},
         }
+        if needs_basic_profile(query):
+            result["next_action"] = BASIC_PROFILE_LOOKUP_HINT
         if profile.include_authority_binding:
             result["authority_binding"] = _authority_binding(
                 parent_revision=None,

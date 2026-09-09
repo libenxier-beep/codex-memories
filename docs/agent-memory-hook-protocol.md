@@ -26,6 +26,15 @@ memory-sidecar outage does not break the user's task.
 
 ## Runtime callback seam
 
+For basic-profile questions and personal thesis, signature or career requests,
+`UserPromptSubmit` adds a bounded, static navigation hint even if recall returns
+no matches. It directs the agent through the active platform adapter to the
+local `memories/agent_self/USER.md` before asking for known facts. The hint never
+reads a profile, copies user text or authorizes publication. Private query
+abstention includes a `next_action` handoff; private content remains outside
+unified knowledge search. Deployments should use a separate clean, pinned
+runtime worktree so updating a development branch cannot disable live hooks.
+
 `CodexHookAdapter` accepts a runtime implementing nine callbacks:
 
 ```python
