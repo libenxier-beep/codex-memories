@@ -19,6 +19,7 @@ from typing import Any
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ALLOWLIST = (
+    "VERSION",
     "scripts",
     "schemas",
     "memory_schema.md",
@@ -206,8 +207,14 @@ prefix = Path(__file__).resolve().parents[1]
 manifest_path = prefix / "install.json"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 runtime = prefix / "runtime"
-if len(sys.argv) > 1 and sys.argv[1] == "doctor":
-    command = [sys.executable, str(runtime / "scripts" / "codex_memories.py"), "doctor", "--manifest", str(manifest_path), *sys.argv[2:]]
+if len(sys.argv) == 1 or sys.argv[1] in ("--help", "-h"):
+    print("Codex Memories: local, inspectable memory for Codex")
+    print("Commands: demo | doctor [--require-integration] | index | recall QUERY | health | --version")
+    print("Use COMMAND --help for more options. Hook setup is described in Getting Started.")
+    sys.exit(0)
+if len(sys.argv) > 1 and sys.argv[1] in ("doctor", "demo", "--version"):
+    options = ["--manifest", str(manifest_path)] if sys.argv[1] == "doctor" else []
+    command = [sys.executable, str(runtime / "scripts" / "codex_memories.py"), sys.argv[1], *options, *sys.argv[2:]]
 else:
     sidecar = Path(manifest["codex_home"]) / "memory-sidecar"
     command = [
@@ -321,6 +328,56 @@ def _git_ready(authority: Path) -> bool:
     )
 
 
+def demo(args: argparse.Namespace) -> dict[str, Any]:
+    """Exercise the real installer and recall in a disposable synthetic home."""
+    with tempfile.TemporaryDirectory(prefix="codex-memories-demo-") as temporary:
+        root = Path(temporary)
+        result = install(argparse.Namespace(
+            prefix=root / "app", authority=root / "authority",
+            codex_home=root / "codex", skip_index=True,
+        ))
+        authority = root / "authority"
+        memory = authority / "core" / "demo-project.md"
+        memory.write_text(
+            _starter_memory().replace("codex-memories-welcome", "codex-memories-demo")
+            .replace("Codex Memories is active", "Synthetic project decision")
+            .replace("# Welcome", "# Synthetic project decision")
+            + "\nThe synthetic Aurora project uses SQLite for its offline task queue.\n",
+            encoding="utf-8",
+        )
+        os.chmod(memory, 0o600)
+        for command in (
+            ("add", "core/demo-project.md"),
+            ("-c", "user.name=Codex Memories Demo", "-c",
+             "user.email=demo@example.invalid", "commit", "-m", "Add synthetic project decision"),
+        ):
+            completed = _git(authority, *command)
+            if completed.returncode:
+                raise ValueError("demo Git setup failed: " + completed.stderr.strip())
+        query = "Aurora offline task queue SQLite"
+        recalled = None
+        for command in (("index",), ("recall", query, "--limit", "3")):
+            completed = subprocess.run(
+                [result["launcher"], *command], text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                timeout=120,
+            )
+            if completed.returncode:
+                raise ValueError("demo command failed: " + (completed.stderr or completed.stdout).strip())
+            recalled = json.loads(completed.stdout)
+        matches = recalled.get("result", {}).get("matches", [])
+        expected = "The synthetic Aurora project uses SQLite for its offline task queue."
+        if not recalled.get("ok") or not any(expected in item.get("evidence", "") for item in matches):
+            raise ValueError("demo did not recall the committed project decision")
+        return {
+            "status": "demo_passed", "query": query, "evidence": expected,
+            "steps": ["Created isolated deployment", "Committed synthetic memory",
+                      "Built index", "Recalled memory in a new process"],
+            "cleanup": "Temporary deployment removed on exit",
+            "integration": "not_tested",
+        }
+
+
 def doctor(args: argparse.Namespace) -> dict[str, Any]:
     manifest_path = args.manifest.resolve(strict=True)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -347,6 +404,7 @@ def doctor(args: argparse.Namespace) -> dict[str, Any]:
         "ready": all(value == "pass" for value in checks.values()),
         "integration": integration,
         "checks": checks,
+        "note": "Integration checks configuration only; verify recall in a new Codex session.",
         "next_action": None
         if integration == "active"
         else "Review the generated hook plan before changing Codex hooks.json.",
@@ -355,13 +413,15 @@ def doctor(args: argparse.Namespace) -> dict[str, Any]:
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
+    root.add_argument("--version", action="version", version="Codex Memories " + (SOURCE_ROOT / "VERSION").read_text().strip())
     commands = root.add_subparsers(dest="command", required=True)
     install_command = commands.add_parser("install", help="install an isolated local deployment")
     install_command.add_argument(
         "--prefix", type=Path, default=Path("~/.local/share/codex-memories").expanduser()
     )
     install_command.add_argument(
-        "--authority", type=Path, default=Path("~/.codex/memories").expanduser()
+        "--authority", type=Path,
+        default=Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser() / "memories"
     )
     install_command.add_argument(
         "--codex-home",
@@ -374,14 +434,22 @@ def parser() -> argparse.ArgumentParser:
     doctor_command = commands.add_parser("doctor", help="verify an installed deployment")
     doctor_command.add_argument("--manifest", type=Path, required=True)
     doctor_command.add_argument("--format", choices=("text", "json"), default="text")
+    doctor_command.add_argument("--require-integration", action="store_true",
+                                help="exit nonzero unless hooks match the reviewed plan")
+    demo_command = commands.add_parser("demo", help="try synthetic recall without changing your Codex setup")
+    demo_command.add_argument("--format", choices=("text", "json"), default="text")
     return root
 
 
 def _render_text(result: dict[str, Any]) -> str:
+    if result.get("status") == "demo_passed":
+        return "\n".join(["Codex Memories demo: PASS", *["  OK  " + step for step in result["steps"]],
+                          "Recalled: " + result["evidence"], result["cleanup"],
+                          "This verifies local recall, not live Codex hook integration."])
     if "ready" in result:
         state = "ready" if result["ready"] else "needs attention"
-        return "Codex Memories: {}\nIntegration: {}\nNext: {}".format(
-            state, result["integration"], result.get("next_action") or "none"
+        return "Codex Memories: {}\nIntegration: {}\n{}\nNext: {}".format(
+            state, result["integration"], result["note"], result.get("next_action") or "none"
         )
     return "Codex Memories installed.\nCommand: {}\nNext: {}".format(
         result["launcher"], result["next_action"]
@@ -391,7 +459,7 @@ def _render_text(result: dict[str, Any]) -> str:
 def main() -> int:
     args = parser().parse_args()
     try:
-        result = install(args) if args.command == "install" else doctor(args)
+        result = {"install": install, "doctor": doctor, "demo": demo}[args.command](args)
     except Exception as error:
         failure = {"ok": False, "error": {"code": type(error).__name__, "message": str(error)}}
         print(json.dumps(failure, ensure_ascii=False, sort_keys=True))
@@ -400,6 +468,8 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
         print(_render_text(result))
+    if args.command == "doctor":
+        return 0 if result["ready"] and (not args.require_integration or result["integration"] == "active") else 1
     return 0
 
 

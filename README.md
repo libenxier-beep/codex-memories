@@ -1,6 +1,9 @@
 # Codex Memories
 
-**Local-first persistent memory for OpenAI Codex — governed recall, progressive disclosure, and no hosted vector database.**
+**Give Codex a local, inspectable memory for project decisions across sessions.**
+
+Keep durable rules in Git. Recall relevant evidence when you need it. No hosted
+vector database or separate memory-service account required.
 
 [![Tests](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml/badge.svg)](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
@@ -9,6 +12,36 @@
 [![OpenAI Codex](https://img.shields.io/badge/integration-OpenAI%20Codex-black)](#how-it-works)
 
 [中文说明](README_ZH.md) · [Architecture](docs/memory-control-plane.md) · [Validation](docs/retrieval-v2-validation.md) · [Hook protocol](docs/agent-memory-hook-protocol.md)
+
+## Try it before installing
+
+Requires Python 3.9+ and Git. CI covers macOS and Linux; Windows is not yet
+validated. The demo does not require a Codex account or API key.
+
+```bash
+git clone https://github.com/libenxier-beep/codex-memories.git
+cd codex-memories
+python3 scripts/codex_memories.py demo
+```
+
+The demo commits a made-up project decision, indexes it, and retrieves it in a
+new process. It removes its temporary deployment automatically and leaves your
+existing Codex settings and memories untouched.
+
+```text
+Codex Memories demo: PASS
+  OK  Created isolated deployment
+  OK  Committed synthetic memory
+  OK  Built index
+  OK  Recalled memory in a new process
+Recalled: The synthetic Aurora project uses SQLite for its offline task queue.
+```
+
+Next: [install and add your first memory](docs/getting-started.md) ·
+[report a problem or share feedback](https://github.com/libenxier-beep/codex-memories/issues/new/choose) ·
+[changelog](CHANGELOG.md)
+
+## About the preview
 
 Codex Memories is a local-first **AI agent memory** runtime for developers who
 want Codex to remember durable facts, decisions, preferences, and lessons
@@ -163,7 +196,7 @@ configuration owner, and local `RecallPolicy`. See the
   atomic authority control plane
 - `schemas/` — machine-readable contracts
 - `scripts/codex_memories.py` and `install.sh` — safe installer and deployment doctor
-- `tests/` — 289 synthetic unit and integration tests
+- `tests/` — synthetic unit and integration tests, including the public first-run demo
 - `docs/retrieval-v2-validation.md` — successes, failures, costs, and limits
 
 Private memories, Work Context content, runtime databases, hidden evaluation
@@ -186,6 +219,10 @@ seal shows that the quality claim is not yet general. See the
 interpretation.
 
 ## Privacy and trust boundary
+
+Local storage does not mean the entire Codex workflow is offline: recalled
+evidence can enter Codex's model context and is subject to your host's data
+settings. The standalone synthetic demo does not call an LLM.
 
 - No memory corpus is uploaded by this runtime.
 - No retrieved passage is treated as an instruction.

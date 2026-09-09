@@ -1,0 +1,28 @@
+name: First-run feedback
+description: Tell us what helped or got in your way.
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: What were you trying to remember?
+      description: Describe the scenario without sharing private information.
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: How far did you get?
+      options:
+        - Tried the isolated demo
+        - Installed the runtime
+        - Configured hooks
+        - Recalled a memory in a new session
+        - Still using it after a week
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: What worked, and what should improve?
+    validations:
+      required: true

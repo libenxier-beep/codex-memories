@@ -14,6 +14,48 @@ INSTALLER = ROOT / "scripts" / "codex_memories.py"
 
 
 class ProductInstallTests(unittest.TestCase):
+    def test_demo_recalls_synthetic_memory_and_leaves_no_deployment(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = dict(os.environ, TMPDIR=temporary)
+            completed = subprocess.run(
+                [sys.executable, str(INSTALLER), "demo", "--format", "json"],
+                env=environment, text=True, capture_output=True, timeout=180,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+            result = json.loads(completed.stdout)
+            self.assertEqual(result["status"], "demo_passed")
+            self.assertIn("SQLite", result["evidence"])
+            self.assertEqual(result["integration"], "not_tested")
+            self.assertFalse(list(Path(temporary).glob("codex-memories-demo-*")))
+
+    def test_installed_launcher_exposes_product_version_help_and_demo(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix, _authority, _home = self.install(Path(temporary))
+            launcher = str(prefix / "bin" / "codex-memories")
+            for arguments, expected in (
+                (["--version"], (ROOT / "VERSION").read_text().strip()),
+                (["--help"], "demo | doctor"),
+                (["demo"], "Codex Memories demo: PASS"),
+            ):
+                result = subprocess.run([launcher, *arguments], text=True, capture_output=True, timeout=180)
+                self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+                self.assertIn(expected, result.stdout)
+
+    def test_doctor_exit_status_distinguishes_missing_integration_and_broken_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix, _authority, codex_home = self.install(Path(temporary))
+            command = [str(prefix / "bin" / "codex-memories"), "doctor", "--format", "json"]
+            pending = subprocess.run(command + ["--require-integration"], text=True, capture_output=True)
+            self.assertEqual(pending.returncode, 1, pending.stdout)
+            plan = json.loads((prefix / "hooks.merge-plan.json").read_text())
+            (codex_home / "hooks.json").write_text(json.dumps(plan["merged"]))
+            active = subprocess.run(command + ["--require-integration"], text=True, capture_output=True)
+            self.assertEqual(active.returncode, 0, active.stdout)
+            (prefix / "runtime" / "scripts" / "agent_memory.py").unlink()
+            broken = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(broken.returncode, 1, broken.stdout)
+            self.assertEqual(json.loads(broken.stdout)["checks"]["runtime"], "fail")
+
     def run_installer(self, *args: str) -> dict:
         completed = subprocess.run(
             [sys.executable, str(INSTALLER), *args, "--format", "json"],
