@@ -1,11 +1,35 @@
 # Codex Memories
 
-**面向 OpenAI Codex 的本地优先持久记忆系统：权威来源重开、渐进披露，无需托管向量数据库。**
+**让 Codex 跨会话找回项目决定，记忆来源保存在本地，随时可检查。**
+
+用 Git 管理长期规则，按需召回相关证据。无需托管向量数据库或单独的记忆服务账号。
 
 [![Tests](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml/badge.svg)](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 [English](README.md) · [架构](docs/memory-control-plane.md) · [测试与边界](docs/retrieval-v2-validation.md)
+
+## 先体验，再安装
+
+需要 Python 3.9+ 和 Git。CI 覆盖 macOS 与 Linux；Windows 尚未验证。
+演示无需 Codex 账号或 API key：
+
+```bash
+git clone https://github.com/libenxier-beep/codex-memories.git
+cd codex-memories
+python3 scripts/codex_memories.py demo
+```
+
+看到 `Codex Memories demo: PASS` 后，会显示找回的合成项目决定：
+`The synthetic Aurora project uses SQLite for its offline task queue.`
+演示执行真实提交、索引和新进程召回，结束后清理临时环境，不修改现有记忆和 Codex 设置。
+这验证本地检索链路；自动会话接入仍需后续配置。
+
+[首次使用指南](docs/getting-started.md) ·
+[反馈问题或试用体验](https://github.com/libenxier-beep/codex-memories/issues/new/choose) ·
+[版本记录](CHANGELOG.md)
+
+## 关于预览版
 
 Codex Memories 适合希望让 Codex 长期记住事实、决策、偏好和工程经验，
 但不愿把私人记忆上传到云端记忆服务的开发者。它通过 Codex 生命周期
@@ -69,7 +93,7 @@ cd codex-memories
 python3 -m unittest discover -s tests
 ```
 
-当前公开仓库包含 289 项合成单元与集成测试。公开 synthetic 三次
+此前验证记录包含 289 项合成单元与集成测试；当前版本新增首次使用回归用例。公开 synthetic 三次
 Recall@5 为 `0.8800 / 0.8867 / 0.8800`，no-answer FPR 均为 `0`；
 但一次仅含 6 条可回答问题的小型 hidden seal 中，候选只有 `3/6`，因此
 被正确拒绝。完整说明见[验证记录](docs/retrieval-v2-validation.md)。
@@ -86,6 +110,7 @@ Recall@5 为 `0.8800 / 0.8867 / 0.8800`，no-answer FPR 均为 `0`；
 
 ## 当前边界
 
+- 本地存储不代表 Codex 全流程离线：召回证据会进入模型上下文，受宿主的数据设置约束。
 - 安装已经自动化，但 Hook 合并仍需要配置负责人明确审阅。
 - Linux 没有 Apple NaturalLanguage 时会安全降级到 lexical recall。
 - Large-B3 没有完成，真实私人记忆质量仍需长期 dogfood 验证。

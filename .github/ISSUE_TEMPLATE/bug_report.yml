@@ -1,39 +1,38 @@
-name: Bug report
-description: Report a reproducible Codex Memories failure using synthetic data.
-title: "[Bug]: "
-labels: [bug]
+name: Installation or recall problem
+description: Help us reproduce a problem using synthetic examples.
+title: "[Bug] "
 body:
   - type: markdown
     attributes:
-      value: Do not include real memories, credentials, local paths, or private hook payloads.
+      value: "Thanks for trying Codex Memories. Remove private memories, local paths, credentials and transcript content before posting."
   - type: input
     id: version
     attributes:
-      label: Commit or release
+      label: Version or commit
+      placeholder: "git rev-parse --short HEAD"
     validations:
       required: true
   - type: input
     id: environment
     attributes:
-      label: Platform and Python version
+      label: OS, Python and Codex versions
     validations:
       required: true
   - type: textarea
-    id: reproduction
+    id: steps
     attributes:
-      label: Synthetic reproduction
-      description: Include the smallest commands and synthetic fixtures that reproduce the behavior.
+      label: Steps to reproduce
+      description: Use a made-up example rather than your private memories.
     validations:
       required: true
   - type: textarea
-    id: expected
+    id: result
     attributes:
-      label: Expected fail-closed behavior
+      label: Expected and actual result
     validations:
       required: true
   - type: textarea
-    id: actual
+    id: diagnostics
     attributes:
-      label: Actual behavior
-    validations:
-      required: true
+      label: Redacted doctor or demo output
+      render: text

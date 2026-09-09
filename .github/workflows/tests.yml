@@ -28,3 +28,31 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Run synthetic unit and integration suite
         run: python3 -m unittest discover -s tests
+      - name: Try the public first-run demo
+        run: python3 scripts/codex_memories.py demo
+
+  release:
+    name: Publish tested preview
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency: preview-release
+    steps:
+      - uses: actions/checkout@v7
+      - name: Publish this version once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\n\r' < VERSION)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$ ]]
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "Preview already published."
+          else
+            gh release create "v$version" --target "$GITHUB_SHA" \
+              --title "Codex Memories $version" --prerelease \
+              --notes-file docs/release-notes.md
+          fi
