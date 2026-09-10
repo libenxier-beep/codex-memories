@@ -1,9 +1,15 @@
-# Codex Memories
+# Codex Memories — Git-backed persistent memory for Codex
 
 **Give Codex a local, inspectable memory for project decisions across sessions.**
 
 Keep durable rules in Git. Recall relevant evidence when you need it. No hosted
 vector database or separate memory-service account required.
+
+Codex Memories is an open-source, local-first memory runtime for OpenAI Codex.
+It stores project rules and decisions in Git and retrieves relevant evidence
+across sessions using a local index. It is an independent community project,
+not an official OpenAI product. Automatic integration requires reviewed hook
+configuration; the standalone demo can be tried without a Codex account.
 
 [![Tests](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml/badge.svg)](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
@@ -11,7 +17,7 @@ vector database or separate memory-service account required.
 [![Local First](https://img.shields.io/badge/storage-local--first-6f42c1)](#privacy-and-trust-boundary)
 [![OpenAI Codex](https://img.shields.io/badge/integration-OpenAI%20Codex-black)](#how-it-works)
 
-[中文说明](README_ZH.md) · [Architecture](docs/memory-control-plane.md) · [Validation](docs/retrieval-v2-validation.md) · [Hook protocol](docs/agent-memory-hook-protocol.md)
+[中文说明](README_ZH.md) · [Installation](docs/getting-started.md) · [FAQ](docs/faq.md) · [Architecture](docs/memory-control-plane.md) · [Validation](docs/retrieval-v2-validation.md) · [Hook protocol](docs/agent-memory-hook-protocol.md)
 
 ## Try it before installing
 
@@ -55,7 +61,7 @@ three-round progressive disclosure loop driven by the current Codex model.
 > Large-B3 evaluation was not completed. Read the
 > [validation record](docs/retrieval-v2-validation.md) before making quality claims.
 
-## Install in five minutes
+## Install Codex persistent memory
 
 Requirements: Python 3.9+, Git, and a local Codex installation.
 
@@ -236,6 +242,9 @@ The complete publication boundary is documented in
 [docs/github-publication-boundary.md](docs/github-publication-boundary.md).
 
 ## FAQ
+
+For installation requirements, privacy, AGENTS.md, and integration limitations,
+see the [Codex Memories FAQ](docs/faq.md).
 
 ### Is this a persistent memory system for Codex?
 

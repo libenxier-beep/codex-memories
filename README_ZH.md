@@ -1,13 +1,18 @@
-# Codex Memories
+# Codex Memories — Git 管理的 Codex 跨会话长期记忆
 
 **让 Codex 跨会话找回项目决定，记忆来源保存在本地，随时可检查。**
 
 用 Git 管理长期规则，按需召回相关证据。无需托管向量数据库或单独的记忆服务账号。
 
+Codex Memories 是面向 OpenAI Codex 的开源、本地优先记忆运行时：
+把项目规则和决策保存在 Git 中，通过本地索引跨会话检索相关证据。
+这是独立社区项目，并非 OpenAI 官方产品。自动接入需要审阅并配置 Hook；
+独立演示无需 Codex 账号即可试跑。
+
 [![Tests](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml/badge.svg)](https://github.com/libenxier-beep/codex-memories/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[English](README.md) · [架构](docs/memory-control-plane.md) · [测试与边界](docs/retrieval-v2-validation.md)
+[English](README.md) · [安装指南](docs/getting-started.md) · [常见问题](docs/faq.md#中文常见问题) · [架构](docs/memory-control-plane.md) · [测试与边界](docs/retrieval-v2-validation.md)
 
 ## 先体验，再安装
 
@@ -41,7 +46,7 @@ sidecar，并由当前 Codex 模型控制最多三轮的渐进式检索。
 > 使用，公开测试全部通过，但独立 Large-B3 尚未完成，不能宣称全面超过
 > Mem0、Graphiti、Letta 或 MemOS。
 
-## 五分钟安装
+## 安装 Codex 长期记忆工具
 
 需要 Python 3.9+、Git 和本地 Codex：
 
